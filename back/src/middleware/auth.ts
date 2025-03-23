@@ -3,7 +3,6 @@ import jwt from 'jsonwebtoken';
 
 interface JwtPayload {
   userId: number;
-  employeeId: number; // Добавляем employeeId
   role: string;
 }
 

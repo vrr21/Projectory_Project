@@ -1,9 +1,9 @@
-import sql from 'mssql';
+import { ConnectionPool } from 'mssql';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const dbConfig: sql.config = {
+const dbConfig = {
   user: process.env.DB_USER || 'ProssLibrann',
   password: process.env.DB_PASSWORD || '123456789',
   server: process.env.DB_HOST || 'localhost',
@@ -15,15 +15,13 @@ const dbConfig: sql.config = {
   },
 };
 
-const poolPromise = new sql.ConnectionPool(dbConfig)
+export const poolPromise = new ConnectionPool(dbConfig)
   .connect()
   .then(pool => {
-    console.log('Connected to SQL Server successfully');
+    console.log('Connected to MSSQL database: KURSACHBD');
     return pool;
   })
   .catch(err => {
     console.error('Database connection failed:', err);
-    process.exit(1);
+    throw err;
   });
-
-export { poolPromise };
