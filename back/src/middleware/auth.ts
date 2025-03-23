@@ -1,8 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
+// Обновляем интерфейс JwtPayload, добавляя employeeId
 interface JwtPayload {
   userId: number;
+  employeeId: number; // Добавляем поле employeeId
   role: string;
 }
 
@@ -30,10 +32,11 @@ export const authenticateToken = (requiredRole?: string) => {
   };
 };
 
+// Расширяем интерфейс Request, чтобы TypeScript знал о свойстве user
 declare global {
   namespace Express {
     interface Request {
-      user?: JwtPayload;
+      user?: JwtPayload; // Тип user теперь включает employeeId
     }
   }
 }
