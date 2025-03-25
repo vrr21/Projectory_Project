@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import poolPromise from '../config/db';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'mysecretkey123';
+const JWT_SECRET = 'mysecretkey123'; // Устанавливаем фиксированное значение для отладки
 
 export const register = async (req: Request, res: Response) => {
   const { email, password, phone, position, fullName } = req.body;
@@ -22,6 +22,7 @@ export const register = async (req: Request, res: Response) => {
       .query('SELECT * FROM Users WHERE Email = @email');
 
     if (userExists.recordset.length > 0) {
+      console.log('Пользователь с таким email уже существует:', email);
       return res.status(400).json({ message: 'Пользователь с таким email уже существует' });
     }
 
@@ -31,7 +32,7 @@ export const register = async (req: Request, res: Response) => {
       .input('fullName', fullName)
       .input('email', email)
       .input('password', hashedPassword)
-      .input('plainPassword', password) // Сохраняем незахешированный пароль
+      .input('plainPassword', password)
       .input('phone', phone)
       .input('position', position)
       .input('role', 'Сотрудник')
@@ -40,7 +41,7 @@ export const register = async (req: Request, res: Response) => {
         'INSERT INTO Users (FullName, Email, Password, PlainPassword, Phone, PositionID, Role, IsAdmin) VALUES (@fullName, @email, @password, @plainPassword, @phone, @position, @role, @isAdmin)'
       );
 
-    console.log('Пользователь добавлен в таблицу Users');
+    console.log('Пользователь успешно добавлен в таблицу Users:', email);
 
     // Получаем ID нового пользователя
     const newUser = await pool
@@ -50,7 +51,7 @@ export const register = async (req: Request, res: Response) => {
 
     const user = newUser.recordset[0];
     const token = jwt.sign({ userId: user.UserID, role: user.Role }, JWT_SECRET, { expiresIn: '1h' });
-    console.log('Токен сгенерирован:', token);
+    console.log('Токен сгенерирован для нового пользователя:', token);
 
     res.status(201).json({ token, role: user.Role });
   } catch (error) {
@@ -73,7 +74,7 @@ export const login = async (req: Request, res: Response) => {
 
     const user = result.recordset[0];
     if (!user) {
-      console.log('Пользователь не найден');
+      console.log('Пользователь не найден:', email);
       return res.status(400).json({ message: 'Неверный email или пароль' });
     }
 
@@ -82,22 +83,20 @@ export const login = async (req: Request, res: Response) => {
     // Проверяем пароль
     let isMatch = false;
     if (user.PlainPassword) {
-      // Если есть незахешированный пароль, сравниваем напрямую
       isMatch = password === user.PlainPassword;
+      console.log('Сравнение с PlainPassword:', { isMatch, plainPassword: user.PlainPassword });
     } else {
-      // Иначе используем bcrypt для сравнения с хешем
       isMatch = await bcrypt.compare(password, user.Password);
+      console.log('Сравнение с хешем:', { isMatch, hashedPassword: user.Password });
     }
 
-    console.log('Пароль валиден:', isMatch);
-
     if (!isMatch) {
-      console.log('Пароль не совпадает');
+      console.log('Пароль не совпадает для пользователя:', email);
       return res.status(400).json({ message: 'Неверный email или пароль' });
     }
 
     const token = jwt.sign({ userId: user.UserID, role: user.Role }, JWT_SECRET, { expiresIn: '1h' });
-    console.log('Токен сгенерирован:', token);
+    console.log('Токен сгенерирован для пользователя:', { email, token });
     res.json({ token, role: user.Role });
   } catch (error) {
     console.error('Ошибка авторизации:', error);

@@ -1,92 +1,58 @@
 // backend/src/controllers/reportController.ts
-import { RequestHandler } from 'express';
-import { IResult } from 'mssql';
+import { Request, Response } from 'express';
 import poolPromise from '../config/db';
 
-interface UserTaskReport {
-  UserID: number;
-  FullName: string;
-  CompletedTasks: number;
-  TotalHours: number;
+// Расширяем тип Request, чтобы добавить свойство user (если оно ещё не добавлено в проекте)
+declare global {
+  namespace Express {
+    interface Request {
+      user?: { userId: number; role: string };
+    }
+  }
 }
 
-interface UserTaskByPeriod {
-  UserID: number;
-  FullName: string;
-  ExecutionDate: Date;
-  Stage: string;
-  TaskDescription: string;
-  HoursSpent: number;
-}
-
-interface TaskList {
-  TaskExecutionID: number;
-  TaskDescription: string;
-  UserName: string;
-  Stage: string;
-  ExecutionDate: Date;
-  Deadline: Date;
-  HoursSpent: number;
-  Status: string;
-  OrderTitle: string;
-}
-
-interface OrderLifecycle {
-  OrderID: number;
-  OrderTitle: string;
-  OrderDescription: string;
-  CreatedAt: Date;
-  Deadline: Date;
-  OrderStatus: string;
-  TaskExecutionID: number;
-  TaskDescription: string;
-  UserName: string;
-  Stage: string;
-  ExecutionDate: Date;
-  HoursSpent: number;
-  TaskStatus: string;
-}
-
-export const getUserTaskReport: RequestHandler = async (req, res) => {
+export const getAdminStats = async (req: Request, res: Response) => {
   try {
     const pool = await poolPromise;
-    const result: IResult<UserTaskReport> = await pool.request().query('SELECT * FROM UserTaskReport');
-    res.status(200).json(result.recordset);
+    console.log('Запрос статистики для администратора:', req.user);
+
+    // Получаем статистику для администратора
+    const stats = await pool.request().query(`
+      SELECT 
+        (SELECT COUNT(*) FROM Users WHERE IsAdmin = 1) AS adminCount,
+        (SELECT COUNT(*) FROM Users WHERE IsAdmin = 0) AS employeeCount,
+        (SELECT COUNT(*) FROM Orders) AS orderCount,
+        (SELECT COUNT(*) FROM TaskExecution) AS taskCount,
+        (SELECT COUNT(*) FROM TaskExecution WHERE StatusID = (SELECT StatusID FROM Status WHERE Name = 'Завершено')) AS completedTasks
+    `);
+
+    console.log('Статистика успешно получена:', stats.recordset[0]);
+    res.json(stats.recordset[0]);
   } catch (error) {
-    console.error('Ошибка получения отчёта UserTaskReport:', error);
+    console.error('Ошибка загрузки статистики:', error);
+    res.status(500).json({ message: 'Ошибка сервера при загрузке статистики' });
+  }
+};
+
+// Другие методы контроллера (предполагаемые, если они есть в вашем проекте)
+export const getUserTaskReport = async (req: Request, res: Response) => {
+  try {
+    const pool = await poolPromise;
+    const result = await pool.request().query('SELECT * FROM UserTaskReport');
+    res.json(result.recordset);
+  } catch (error) {
+    console.error('Ошибка получения отчёта:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
-export const getUserTaskByPeriod: RequestHandler = async (req, res) => {
+export const getUserTaskByPeriod = async (req: Request, res: Response) => {
   try {
     const pool = await poolPromise;
-    const result: IResult<UserTaskByPeriod> = await pool.request().query('SELECT * FROM UserTaskByPeriod');
-    res.status(200).json(result.recordset);
+    const result = await pool.request().query('SELECT * FROM UserTaskByPeriod');
+    res.json(result.recordset);
   } catch (error) {
-    console.error('Ошибка получения отчёта UserTaskByPeriod:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
-  }
-};
-
-export const getTaskList: RequestHandler = async (req, res) => {
-  try {
-    const pool = await poolPromise;
-    const result: IResult<TaskList> = await pool.request().query('SELECT * FROM TaskList');
-    res.status(200).json(result.recordset);
-  } catch (error) {
-    console.error('Ошибка получения отчёта TaskList:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
-  }
-};
-
-export const getOrderLifecycle: RequestHandler = async (req, res) => {
-  try {
-    const pool = await poolPromise;
-    const result: IResult<OrderLifecycle> = await pool.request().query('SELECT * FROM OrderLifecycle');
-    res.status(200).json(result.recordset);
-  } catch (error) {
-    console.error('Ошибка получения отчёта OrderLifecycle:', error);
+    console.error('Ошибка получения отчёта по периоду:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
