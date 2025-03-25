@@ -1,27 +1,26 @@
-import { ConnectionPool } from 'mssql';
 import dotenv from 'dotenv';
+import { config } from 'mssql';
 
+// Загружаем переменные окружения
 dotenv.config();
 
-const dbConfig = {
-  user: process.env.DB_USER || 'ProssLibrann',
-  password: process.env.DB_PASSWORD || '123456789',
-  server: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '1433'),
-  database: process.env.DB_NAME || 'KURSACHBD',
+// Проверяем, что все переменные окружения определены
+const requiredEnvVars = ['DB_USER', 'DB_PASSWORD', 'DB_HOST', 'DB_NAME', 'DB_PORT'];
+const missingVars = requiredEnvVars.filter((varName) => !process.env[varName]);
+if (missingVars.length > 0) {
+  throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
+}
+
+const dbConfig: config = {
+  user: process.env.DB_USER!,
+  password: process.env.DB_PASSWORD!,
+  server: process.env.DB_HOST!,
+  database: process.env.DB_NAME!,
+  port: parseInt(process.env.DB_PORT!, 10),
   options: {
-    encrypt: false,
-    trustServerCertificate: true,
+    encrypt: false, // Для локального сервера
+    trustServerCertificate: true, // Для локального сервера
   },
 };
 
-export const poolPromise = new ConnectionPool(dbConfig)
-  .connect()
-  .then(pool => {
-    console.log('Connected to MSSQL database: KURSACHBD');
-    return pool;
-  })
-  .catch(err => {
-    console.error('Database connection failed:', err);
-    throw err;
-  });
+export default dbConfig;
