@@ -1,12 +1,12 @@
 // backend/src/controllers/authController.ts
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import poolPromise from '../config/db';
 
-const JWT_SECRET = 'mysecretkey123'; // Устанавливаем фиксированное значение для отладки
+const JWT_SECRET = 'mysecretkey123'; // Должно совпадать с authMiddleware.ts
 
-export const register = async (req: Request, res: Response) => {
+export const register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const { email, password, phone, position, fullName } = req.body;
 
   try {
@@ -23,7 +23,8 @@ export const register = async (req: Request, res: Response) => {
 
     if (userExists.recordset.length > 0) {
       console.log('Пользователь с таким email уже существует:', email);
-      return res.status(400).json({ message: 'Пользователь с таким email уже существует' });
+      res.status(400).json({ message: 'Пользователь с таким email уже существует' });
+      return;
     }
 
     // Регистрируем нового пользователя
@@ -57,10 +58,11 @@ export const register = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Ошибка регистрации:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
+    next(error); // Передаём ошибку в обработчик ошибок Express
   }
 };
 
-export const login = async (req: Request, res: Response) => {
+export const login = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const { email, password } = req.body;
 
   try {
@@ -75,7 +77,8 @@ export const login = async (req: Request, res: Response) => {
     const user = result.recordset[0];
     if (!user) {
       console.log('Пользователь не найден:', email);
-      return res.status(400).json({ message: 'Неверный email или пароль' });
+      res.status(400).json({ message: 'Неверный email или пароль' });
+      return;
     }
 
     console.log('Найденный пользователь:', user);
@@ -92,7 +95,8 @@ export const login = async (req: Request, res: Response) => {
 
     if (!isMatch) {
       console.log('Пароль не совпадает для пользователя:', email);
-      return res.status(400).json({ message: 'Неверный email или пароль' });
+      res.status(400).json({ message: 'Неверный email или пароль' });
+      return;
     }
 
     const token = jwt.sign({ userId: user.UserID, role: user.Role }, JWT_SECRET, { expiresIn: '1h' });
@@ -101,5 +105,6 @@ export const login = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Ошибка авторизации:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
+    next(error); // Передаём ошибку в обработчик ошибок Express
   }
 };

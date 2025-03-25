@@ -1,5 +1,10 @@
 // backend/src/routes/authRoutes.ts
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
+
+// Явно определяем тип обработчика маршрутов
+type ExpressHandler = (req: Request, res: Response, next: NextFunction) => Promise<void>;
+
+// Импортируем функции с явным указанием типов
 import { register, login } from '../controllers/authController';
 
 const router = Router();
@@ -12,8 +17,12 @@ if (typeof register !== 'function' || typeof login !== 'function') {
   throw new Error('Функции register или login не определены в authController.ts');
 }
 
+// Явно приводим функции к типу ExpressHandler
+const registerHandler: ExpressHandler = register;
+const loginHandler: ExpressHandler = login;
+
 // Маршруты для регистрации и авторизации
-router.post('/register', register);
-router.post('/login', login);
+router.post('/register', registerHandler);
+router.post('/login', loginHandler);
 
 export default router;

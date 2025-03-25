@@ -1,8 +1,8 @@
 // backend/src/controllers/reportController.ts
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import poolPromise from '../config/db';
 
-// Расширяем тип Request, чтобы добавить свойство user (если оно ещё не добавлено в проекте)
+// Расширяем тип Request, чтобы добавить свойство user
 declare global {
   namespace Express {
     interface Request {
@@ -11,7 +11,7 @@ declare global {
   }
 }
 
-export const getAdminStats = async (req: Request, res: Response) => {
+export const getAdminStats = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const pool = await poolPromise;
     console.log('Запрос статистики для администратора:', req.user);
@@ -31,11 +31,12 @@ export const getAdminStats = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Ошибка загрузки статистики:', error);
     res.status(500).json({ message: 'Ошибка сервера при загрузке статистики' });
+    next(error);
   }
 };
 
-// Другие методы контроллера (предполагаемые, если они есть в вашем проекте)
-export const getUserTaskReport = async (req: Request, res: Response) => {
+// Другие методы контроллера
+export const getUserTaskReport = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const pool = await poolPromise;
     const result = await pool.request().query('SELECT * FROM UserTaskReport');
@@ -43,10 +44,11 @@ export const getUserTaskReport = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Ошибка получения отчёта:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
+    next(error);
   }
 };
 
-export const getUserTaskByPeriod = async (req: Request, res: Response) => {
+export const getUserTaskByPeriod = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const pool = await poolPromise;
     const result = await pool.request().query('SELECT * FROM UserTaskByPeriod');
@@ -54,5 +56,6 @@ export const getUserTaskByPeriod = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Ошибка получения отчёта по периоду:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
+    next(error);
   }
 };
