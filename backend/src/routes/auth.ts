@@ -1,9 +1,10 @@
+// backend/src/routes/auth.ts
 import { Router } from 'express';
-import { login, loginValidation, register, registerValidation } from '../controllers/authController';
+import { login, register } from '../controllers/authController';
 
 const router = Router();
 
-router.post('/register', ...registerValidation, register);
-router.post('/login', ...loginValidation, login);
+router.post('/login', login);
+router.post('/register', register);
 
 export default router;

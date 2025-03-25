@@ -1,28 +1,37 @@
+// backend/src/index.ts
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import authRoutes from './routes/auth';
-import employeeRoutes from './routes/employees';
-import orderRoutes from './routes/orders';
-import reportRoutes from './routes/reports';
-import stageRoutes from './routes/stages';
-import statusRoutes from './routes/statuses';
-import taskRoutes from './routes/tasks';
-
-dotenv.config();
+import ordersRoutes from './routes/orders';
+import tasksRoutes from './routes/tasks';
+import commentsRoutes from './routes/comments';
+import reportsRoutes from './routes/reports';
+import poolPromise from './config/db';
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-app.use('/api/auth', authRoutes);
-app.use('/api/employees', employeeRoutes);
-app.use('/api/orders', orderRoutes);
-app.use('/api/reports', reportRoutes);
-app.use('/api/stages', stageRoutes);
-app.use('/api/statuses', statusRoutes);
-app.use('/api/tasks', taskRoutes);
+// Подключение маршрутов
+app.use('/auth', authRoutes);
+app.use('/orders', ordersRoutes);
+app.use('/tasks', tasksRoutes);
+app.use('/comments', commentsRoutes);
+app.use('/reports', reportsRoutes);
+
+// Тест подключения к базе данных
+poolPromise
+  .then(pool => {
+    console.log('Connected to SQL Server');
+    return pool.request().query('SELECT 1 as test');
+  })
+  .then(result => {
+    console.log('Database connection test successful:', result);
+  })
+  .catch(err => {
+    console.error('Database connection test failed:', err);
+  });
 
 const PORT = process.env.PORT || 3002;
 app.listen(PORT, () => {

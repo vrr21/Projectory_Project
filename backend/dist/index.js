@@ -15,8 +15,15 @@ const statuses_1 = __importDefault(require("./routes/statuses"));
 const tasks_1 = __importDefault(require("./routes/tasks"));
 dotenv_1.default.config();
 const app = (0, express_1.default)();
-app.use((0, cors_1.default)());
+app.use((0, cors_1.default)({
+    origin: 'http://localhost:3000', // Порт фронтенда
+    credentials: true,
+}));
 app.use(express_1.default.json());
+// Проверка работы сервера
+app.get('/', (req, res) => {
+    res.send('Server is running');
+});
 app.use('/api/auth', auth_1.default);
 app.use('/api/employees', employees_1.default);
 app.use('/api/orders', orders_1.default);

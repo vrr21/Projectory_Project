@@ -1,61 +1,128 @@
-import { Request, Response, NextFunction } from 'express';
+// backend/src/controllers/orderController.ts
+import { RequestHandler } from 'express';
+import { IResult } from 'mssql';
 import poolPromise from '../config/db';
 
-export const getOrders = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  try {
-    const pool = await poolPromise;
-    const result = await pool.request().query('SELECT * FROM CustomerOrder');
-    res.json(result.recordset);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error });
-  }
-};
+interface Order {
+  OrderID: number;
+  Title: string;
+  Description: string;
+  CreatedAt: Date;
+  Deadline: Date;
+  StatusID: number;
+}
 
-export const createOrder = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const { customerId, orderTypeId, orderDate, description, statusId } = req.body;
+interface CreateOrderRequestBody {
+  title: string;
+  description: string;
+  deadline: string;
+}
+
+interface UpdateOrderRequestBody {
+  title?: string;
+  description?: string;
+  deadline?: string;
+  statusId?: number;
+}
+
+type OrderResponse = Order | { message: string };
+type OrdersResponse = Order[] | { message: string };
+
+export const createOrder: RequestHandler<{}, OrderResponse, CreateOrderRequestBody> = async (req, res) => {
+  const { title, description, deadline } = req.body;
+
+  if (!title || !deadline) {
+    res.status(400).json({ message: 'Название и дедлайн обязательны' });
+    return;
+  }
+
   try {
     const pool = await poolPromise;
-    await pool.request()
-      .input('customerId', customerId)
-      .input('orderTypeId', orderTypeId)
-      .input('orderDate', orderDate)
+    await pool
+      .request()
+      .input('title', title)
       .input('description', description)
-      .input('statusId', statusId)
-      .query('INSERT INTO CustomerOrder (CustomerID, OrderTypeID, OrderDate, Description, StatusID) VALUES (@customerId, @orderTypeId, @orderDate, @description, @statusId)');
-    res.status(201).json({ message: 'Order created' });
+      .input('createdAt', new Date())
+      .input('deadline', new Date(deadline))
+      .input('statusId', 1) // To Do
+      .query(
+        'INSERT INTO Orders (Title, Description, CreatedAt, Deadline, StatusID) VALUES (@title, @description, @createdAt, @deadline, @statusId)'
+      );
+
+    const result: IResult<Order> = await pool
+      .request()
+      .query('SELECT TOP 1 * FROM Orders ORDER BY OrderID DESC');
+
+    res.status(201).json(result.recordset[0]);
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error });
+    console.error('Ошибка создания заказа:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
-export const updateOrder = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const { id } = req.params;
-  const { customerId, orderTypeId, orderDate, description, statusId } = req.body;
+export const getOrders: RequestHandler = async (req, res) => {
   try {
     const pool = await poolPromise;
-    await pool.request()
-      .input('id', id)
-      .input('customerId', customerId)
-      .input('orderTypeId', orderTypeId)
-      .input('orderDate', orderDate)
+    const result: IResult<Order> = await pool.request().query('SELECT * FROM Orders');
+    res.status(200).json(result.recordset);
+  } catch (error) {
+    console.error('Ошибка получения заказов:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+export const updateOrder: RequestHandler<{ id: string }, OrderResponse, UpdateOrderRequestBody> = async (req, res) => {
+  const { id } = req.params;
+  const { title, description, deadline, statusId } = req.body;
+
+  try {
+    const pool = await poolPromise;
+    await pool
+      .request()
+      .input('id', parseInt(id))
+      .input('title', title)
       .input('description', description)
+      .input('deadline', deadline ? new Date(deadline) : null)
       .input('statusId', statusId)
-      .query('UPDATE CustomerOrder SET CustomerID = @customerId, OrderTypeID = @orderTypeId, OrderDate = @orderDate, Description = @description, StatusID = @statusId WHERE OrderID = @id');
-    res.json({ message: 'Order updated' });
+      .query(
+        'UPDATE Orders SET Title = COALESCE(@title, Title), Description = COALESCE(@description, Description), Deadline = COALESCE(@deadline, Deadline), StatusID = COALESCE(@statusId, StatusID) WHERE OrderID = @id'
+      );
+
+    const result: IResult<Order> = await pool
+      .request()
+      .input('id', parseInt(id))
+      .query('SELECT * FROM Orders WHERE OrderID = @id');
+
+    if (result.recordset.length === 0) {
+      res.status(404).json({ message: 'Заказ не найден' });
+      return;
+    }
+
+    res.status(200).json(result.recordset[0]);
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error });
+    console.error('Ошибка обновления заказа:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
-export const deleteOrder = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const deleteOrder: RequestHandler<{ id: string }> = async (req, res) => {
   const { id } = req.params;
+
   try {
     const pool = await poolPromise;
-    await pool.request()
-      .input('id', id)
-      .query('DELETE FROM CustomerOrder WHERE OrderID = @id');
-    res.json({ message: 'Order deleted' });
+    const result = await pool
+      .request()
+      .input('id', parseInt(id))
+      .query('DELETE FROM Orders WHERE OrderID = @id');
+
+    if (result.rowsAffected[0] === 0) {
+      res.status(404).json({ message: 'Заказ не найден' });
+      return;
+    }
+
+    res.status(200).json({ message: 'Заказ удалён' });
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error });
+    console.error('Ошибка удаления заказа:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };

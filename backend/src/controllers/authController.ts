@@ -1,141 +1,106 @@
-import { Request, Response, NextFunction } from 'express';
-import poolPromise from '../config/db';
+// backend/src/controllers/authController.ts
+import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { body, validationResult, ValidationChain } from 'express-validator';
+import poolPromise from '../config/db';
 
-// Валидация для регистрации
-export const registerValidation: ValidationChain[] = [
-  body('email').isEmail().withMessage('Некорректный email'),
-  body('password').isLength({ min: 6 }).withMessage('Пароль должен содержать минимум 6 символов'),
-  body('fullName').notEmpty().withMessage('Полное имя обязательно'),
-  body('phone').optional().isMobilePhone('any').withMessage('Некорректный номер телефона'),
-  body('positionId').optional().isInt().withMessage('Некорректный ID должности'),
-  body('role').optional().isString().withMessage('Некорректная роль'),
-];
+const JWT_SECRET = process.env.JWT_SECRET || 'mysecretkey123';
 
-// Функция регистрации
-export const register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    res.status(400).json({ errors: errors.array() });
-    return;
-  }
-
-  const { email, password, fullName, phone, positionId, role } = req.body;
+export const register = async (req: Request, res: Response) => {
+  const { email, password, phone, position, fullName } = req.body;
 
   try {
     const pool = await poolPromise;
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    console.log('Попытка регистрации:', { email, fullName, phone, positionId: position });
 
     // Проверяем, существует ли пользователь с таким email
-    const existingUser = await pool
+    const userExists = await pool
       .request()
       .input('email', email)
       .query('SELECT * FROM Users WHERE Email = @email');
 
-    if (existingUser.recordset.length > 0) {
-      res.status(400).json({ message: 'Пользователь с таким email уже существует' });
-      return;
+    if (userExists.recordset.length > 0) {
+      return res.status(400).json({ message: 'Пользователь с таким email уже существует' });
     }
 
-    // Создаём запись в таблице Employee
-    const employeeResult = await pool
+    // Регистрируем нового пользователя
+    await pool
       .request()
       .input('fullName', fullName)
       .input('email', email)
-      .input('phone', phone || null) // Если phone не передан, используем null
-      .input('positionId', positionId || 2) // По умолчанию ID должности = 2 (Сотрудник)
-      .query(
-        'INSERT INTO Employee (FullName, Email, Phone, PositionID) OUTPUT INSERTED.EmployeeID VALUES (@fullName, @email, @phone, @positionId)'
-      );
-
-    const employeeId = employeeResult.recordset[0].EmployeeID;
-
-    // Хешируем пароль
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Определяем роль и статус администратора
-    const userRole = role || 'Сотрудник'; // По умолчанию "Сотрудник"
-    const isAdmin = userRole === 'Администратор' ? 1 : 0;
-
-    // Создаём запись в таблице Users
-    await pool
-      .request()
-      .input('employeeId', employeeId)
-      .input('email', email)
       .input('password', hashedPassword)
-      .input('isAdmin', isAdmin)
-      .input('role', userRole)
+      .input('plainPassword', password) // Сохраняем незахешированный пароль
+      .input('phone', phone)
+      .input('position', position)
+      .input('role', 'Сотрудник')
+      .input('isAdmin', 0)
       .query(
-        'INSERT INTO Users (EmployeeID, Email, Password, IsAdmin, Role) VALUES (@employeeId, @email, @password, @isAdmin, @role)'
+        'INSERT INTO Users (FullName, Email, Password, PlainPassword, Phone, PositionID, Role, IsAdmin) VALUES (@fullName, @email, @password, @plainPassword, @phone, @position, @role, @isAdmin)'
       );
 
-    // Генерируем JWT-токен
-    const token = jwt.sign(
-      { employeeId, role: userRole },
-      process.env.JWT_SECRET!,
-      { expiresIn: '1h' }
-    );
+    console.log('Пользователь добавлен в таблицу Users');
 
-    // Возвращаем токен и роль
-    res.status(201).json({ token, role: userRole });
+    // Получаем ID нового пользователя
+    const newUser = await pool
+      .request()
+      .input('email', email)
+      .query('SELECT UserID, Role FROM Users WHERE Email = @email');
+
+    const user = newUser.recordset[0];
+    const token = jwt.sign({ userId: user.UserID, role: user.Role }, JWT_SECRET, { expiresIn: '1h' });
+    console.log('Токен сгенерирован:', token);
+
+    res.status(201).json({ token, role: user.Role });
   } catch (error) {
-    console.error('Ошибка при регистрации:', error);
-    res.status(500).json({ message: 'Ошибка сервера', error });
+    console.error('Ошибка регистрации:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
-// Валидация для входа
-export const loginValidation: ValidationChain[] = [
-  body('email').isEmail().withMessage('Некорректный email'),
-  body('password').notEmpty().withMessage('Пароль обязателен'),
-];
-
-// Функция входа
-export const login = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    res.status(400).json({ errors: errors.array() });
-    return;
-  }
-
+export const login = async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
   try {
     const pool = await poolPromise;
+    console.log('Попытка авторизации:', { email, password });
 
-    // Ищем пользователя по email
-    const userResult = await pool
+    const result = await pool
       .request()
       .input('email', email)
       .query('SELECT * FROM Users WHERE Email = @email');
 
-    if (userResult.recordset.length === 0) {
-      res.status(400).json({ message: 'Неверные учетные данные' });
-      return;
+    const user = result.recordset[0];
+    if (!user) {
+      console.log('Пользователь не найден');
+      return res.status(400).json({ message: 'Неверный email или пароль' });
     }
 
-    const user = userResult.recordset[0];
+    console.log('Найденный пользователь:', user);
 
     // Проверяем пароль
-    const isMatch = await bcrypt.compare(password, user.Password);
-
-    if (!isMatch) {
-      res.status(400).json({ message: 'Неверные учетные данные' });
-      return;
+    let isMatch = false;
+    if (user.PlainPassword) {
+      // Если есть незахешированный пароль, сравниваем напрямую
+      isMatch = password === user.PlainPassword;
+    } else {
+      // Иначе используем bcrypt для сравнения с хешем
+      isMatch = await bcrypt.compare(password, user.Password);
     }
 
-    // Генерируем JWT-токен
-    const token = jwt.sign(
-      { employeeId: user.EmployeeID, role: user.Role },
-      process.env.JWT_SECRET!,
-      { expiresIn: '1h' }
-    );
+    console.log('Пароль валиден:', isMatch);
 
-    // Возвращаем токен и роль
+    if (!isMatch) {
+      console.log('Пароль не совпадает');
+      return res.status(400).json({ message: 'Неверный email или пароль' });
+    }
+
+    const token = jwt.sign({ userId: user.UserID, role: user.Role }, JWT_SECRET, { expiresIn: '1h' });
+    console.log('Токен сгенерирован:', token);
     res.json({ token, role: user.Role });
   } catch (error) {
-    console.error('Ошибка при входе:', error);
-    res.status(500).json({ message: 'Ошибка сервера', error });
+    console.error('Ошибка авторизации:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };

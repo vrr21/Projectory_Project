@@ -1,12 +1,15 @@
+// backend/src/routes/tasks.ts
 import { Router } from 'express';
-import { getTasks, createTask, updateTask, deleteTask } from '../controllers/taskController';
-import { authMiddleware } from '../middleware/auth';
+import { createTask, getTasks, getTasksByUser, updateTask, deleteTask } from '../controllers/taskController';
+import { authMiddleware } from '../middleware/authMiddleware';
+import { roleMiddleware } from '../middleware/roleMiddleware';
 
 const router = Router();
 
-router.get('/', authMiddleware(), getTasks);
-router.post('/', authMiddleware('Администратор'), createTask);
-router.put('/:id', authMiddleware('Администратор'), updateTask);
-router.delete('/:id', authMiddleware('Администратор'), deleteTask);
+router.post('/', authMiddleware, roleMiddleware('Администратор'), createTask);
+router.get('/', authMiddleware, getTasks);
+router.get('/user/:userId', authMiddleware, getTasksByUser);
+router.put('/:id', authMiddleware, updateTask);
+router.delete('/:id', authMiddleware, roleMiddleware('Администратор'), deleteTask);
 
 export default router;

@@ -20,7 +20,7 @@ const requiredEnvVars = [
 const checkEnvVars = (vars) => {
     for (const envVar of vars) {
         if (!process.env[envVar]) {
-            throw new Error(`Environment variable ${envVar} is not defined`);
+            throw new Error(`Environment variable ${String(envVar)} is not defined`);
         }
     }
 };
@@ -28,7 +28,7 @@ const checkEnvVars = (vars) => {
 checkEnvVars(requiredEnvVars);
 // Формируем конфигурацию для подключения к базе данных
 const dbConfig = {
-    user: process.env.DB_USER, // Явное приведение типа
+    user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     server: process.env.DB_HOST,
     port: parseInt(process.env.DB_PORT, 10), // Убедимся, что порт - число
