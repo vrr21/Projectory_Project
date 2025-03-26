@@ -2,7 +2,8 @@
 import express from 'express';
 import cors from 'cors';
 import authRoutes from './routes/authRoutes';
-import reportsRoutes from './routes/reports'; // Заменили statsRoutes на reportsRoutes
+import reportsRoutes from './routes/reports';
+import tasksRoutes from './routes/tasks'; // Добавляем маршруты для задач
 import poolPromise from './config/db';
 
 const app = express();
@@ -13,7 +14,8 @@ app.use(express.json());
 
 // Подключаем маршруты
 app.use('/auth', authRoutes);
-app.use('/reports', reportsRoutes); // Используем reportsRoutes
+app.use('/reports', reportsRoutes);
+app.use('/tasks', tasksRoutes); // Подключаем маршруты для задач
 
 app.listen(PORT, async () => {
   try {
