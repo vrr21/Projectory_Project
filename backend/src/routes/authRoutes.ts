@@ -1,28 +1,39 @@
 // backend/src/routes/authRoutes.ts
 import { Router, Request, Response, NextFunction } from 'express';
-
-// Явно определяем тип обработчика маршрутов
-type ExpressHandler = (req: Request, res: Response, next: NextFunction) => Promise<void>;
-
-// Импортируем функции с явным указанием типов
-import { register, login } from '../controllers/authController';
+import { register, login, registerValidation, loginValidation } from '../controllers/authController';
+import bcrypt from 'bcryptjs';
+import poolPromise from '../config/db';
 
 const router = Router();
 
-// Проверяем, что функции импортированы корректно
-console.log('Импорт register:', typeof register);
-console.log('Импорт login:', typeof login);
+router.post('/register', registerValidation, register);
+router.post('/login', loginValidation, login);
 
-if (typeof register !== 'function' || typeof login !== 'function') {
-  throw new Error('Функции register или login не определены в authController.ts');
-}
+// backend/src/routes/authRoutes.ts (фрагмент)
+router.post('/create-admin', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const pool = await poolPromise;
+    const hashedPassword = await bcrypt.hash('admin123', 12);
 
-// Явно приводим функции к типу ExpressHandler
-const registerHandler: ExpressHandler = register;
-const loginHandler: ExpressHandler = login;
+    await pool
+      .request()
+      .input('fullName', 'Admin User')
+      .input('email', 'admin@gmail.com')
+      .input('password', hashedPassword)
+      .input('phone', '+1234567890')
+      .input('position', 1)
+      .input('role', 'Администратор')
+      .input('isAdmin', 1)
+      .query(
+        'INSERT INTO Users (FullName, Email, Password, Phone, PositionID, Role, IsAdmin) VALUES (@fullName, @email, @password, @phone, @position, @role, @isAdmin)'
+      );
 
-// Маршруты для регистрации и авторизации
-router.post('/register', registerHandler);
-router.post('/login', loginHandler);
+    res.status(201).json({ message: 'Администратор создан' });
+  } catch (error) {
+    console.error('Ошибка создания администратора:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+    next(error);
+  }
+});
 
 export default router;

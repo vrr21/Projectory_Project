@@ -1,32 +1,25 @@
 // backend/src/config/db.ts
-import { ConnectionPool } from 'mssql';
+import sql from 'mssql';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Отладка: выведем значения переменных окружения
-console.log('DB_USER:', process.env.DB_USER);
-console.log('DB_PASSWORD:', process.env.DB_PASSWORD);
-console.log('DB_HOST:', process.env.DB_HOST);
-console.log('DB_PORT:', process.env.DB_PORT);
-console.log('DB_NAME:', process.env.DB_NAME);
-
-const dbConfig = {
-  user: process.env.DB_USER ?? 'default_user',
-  password: process.env.DB_PASSWORD ?? 'default_password',
-  server: process.env.DB_HOST ?? 'localhost',
-  database: process.env.DB_NAME ?? 'default_database',
-  port: parseInt(process.env.DB_PORT ?? '1433'),
+const dbConfig: sql.config = {
+  user: process.env.DB_USER || 'ProssLibrann',
+  password: process.env.DB_PASSWORD || '123456789',
+  server: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || '1433', 10),
+  database: process.env.DB_NAME || 'DB_PROJECTORY',
   options: {
-    encrypt: true,
+    encrypt: false,
     trustServerCertificate: true,
   },
 };
 
-const poolPromise = new ConnectionPool(dbConfig)
+const poolPromise = new sql.ConnectionPool(dbConfig)
   .connect()
   .then(pool => {
-    console.log('Connected to SQL Server');
+    console.log('Successfully connected to the database:', dbConfig.database);
     return pool;
   })
   .catch(err => {
