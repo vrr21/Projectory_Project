@@ -1,15 +1,15 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import poolPromise from '../config/db';
 import { authMiddleware } from '../middleware/authMiddleware';
+import { roleMiddleware } from '../middleware/roleMiddleware';
 
-// Определяем интерфейсы для типизации данных
 interface Task {
   TaskExecutionID: number;
   TaskDescription: string;
   UserName: string;
   Stage: string;
-  ExecutionDate: string | null; // Изменено на string | null
-  Deadline: string | null;      // Изменено на string | null
+  ExecutionDate: string;
+  Deadline: string;
   HoursSpent: number;
   Status: string;
   OrderTitle: string;
@@ -20,37 +20,10 @@ interface User {
   FullName: string;
 }
 
-interface Status {
-  StatusID: number;
-  Name: string;
-}
-
-interface Order {
-  OrderID: number;
-  Title: string;
-}
-
-interface Stage {
-  StageID: number;
-  Name: string;
-}
-
-// Интерфейс для тела запроса на создание/обновление задачи
-interface TaskUpdateRequest {
-  orderId: number;
-  userId: number;
-  stageId: number;
-  executionDate: string | null;
-  deadline: string | null;
-  hoursSpent: number;
-  statusId: number;
-  description: string;
-}
-
 const router = Router();
 
 // Получение всех задач (для администратора)
-router.get('/', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.get('/', authMiddleware, roleMiddleware('Администратор'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const pool = await poolPromise;
     const result = await pool.request().query(`
@@ -119,7 +92,7 @@ router.get('/user-tasks', authMiddleware, async (req: Request, res: Response, ne
 });
 
 // Получение задачи по ID
-router.get('/:id', authMiddleware, async (req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> => {
+router.get('/:id', authMiddleware, roleMiddleware('Администратор'), async (req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> => {
   const taskId = parseInt(req.params.id);
 
   if (isNaN(taskId)) {
@@ -161,110 +134,8 @@ router.get('/:id', authMiddleware, async (req: Request<{ id: string }>, res: Res
   }
 });
 
-// Получение StatusID по имени статуса
-router.get('/status', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const statusName = req.query.name as string;
-
-  if (!statusName) {
-    res.status(400).json({ message: 'Не указано имя статуса' });
-    return;
-  }
-
-  try {
-    const pool = await poolPromise;
-    const result = await pool
-      .request()
-      .input('statusName', statusName)
-      .query(`
-        SELECT StatusID
-        FROM Status
-        WHERE Name = @statusName
-      `);
-
-    const status: Status | undefined = result.recordset[0];
-    if (!status) {
-      res.status(404).json({ message: 'Статус не найден' });
-      return;
-    }
-
-    res.json({ statusId: status.StatusID });
-  } catch (error) {
-    console.error('Ошибка получения статуса:', error);
-    res.status(500).json({ message: 'Ошибка сервера при получении статуса' });
-    next(error);
-  }
-});
-
-// Получение OrderID по названию заказа
-router.get('/orders/by-title', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const orderTitle = req.query.title as string;
-
-  if (!orderTitle) {
-    res.status(400).json({ message: 'Не указано название заказа' });
-    return;
-  }
-
-  try {
-    const pool = await poolPromise;
-    const result = await pool
-      .request()
-      .input('orderTitle', orderTitle)
-      .query(`
-        SELECT OrderID
-        FROM Orders
-        WHERE Title = @orderTitle
-      `);
-
-    const order: Order | undefined = result.recordset[0];
-    if (!order) {
-      res.status(404).json({ message: 'Заказ не найден' });
-      return;
-    }
-
-    res.json({ orderId: order.OrderID });
-  } catch (error) {
-    console.error('Ошибка получения OrderID:', error);
-    res.status(500).json({ message: 'Ошибка сервера при получении OrderID' });
-    next(error);
-  }
-});
-
-// Получение StageID по имени этапа
-router.get('/stage', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const stageName = req.query.name as string;
-
-  if (!stageName) {
-    res.status(400).json({ message: 'Не указано название этапа' });
-    return;
-  }
-
-  try {
-    const pool = await poolPromise;
-    const result = await pool
-      .request()
-      .input('stageName', stageName)
-      .query(`
-        SELECT StageID
-        FROM Stage
-        WHERE Name = @stageName
-      `);
-
-    const stage: Stage | undefined = result.recordset[0];
-    if (!stage) {
-      res.status(404).json({ message: 'Этап не найден' });
-      return;
-    }
-
-    res.json({ stageId: stage.StageID });
-  } catch (error) {
-    console.error('Ошибка получения StageID:', error);
-    res.status(500).json({ message: 'Ошибка сервера при получении StageID' });
-    next(error);
-  }
-});
-
 // Создание новой задачи
-router.post('/', authMiddleware, async (req: Request<{}, {}, TaskUpdateRequest>, res: Response, next: NextFunction): Promise<void> => {
+router.post('/', authMiddleware, roleMiddleware('Администратор'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const { orderId, userId, stageId, executionDate, deadline, hoursSpent, statusId, description } = req.body;
 
   if (!orderId || !userId || !stageId || !statusId || !description) {
@@ -298,7 +169,7 @@ router.post('/', authMiddleware, async (req: Request<{}, {}, TaskUpdateRequest>,
 });
 
 // Обновление задачи
-router.put('/:id', authMiddleware, async (req: Request<{ id: string }, {}, TaskUpdateRequest>, res: Response, next: NextFunction): Promise<void> => {
+router.put('/:id', authMiddleware, roleMiddleware('Администратор'), async (req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> => {
   const taskId = parseInt(req.params.id);
   const { orderId, userId, stageId, executionDate, deadline, hoursSpent, statusId, description } = req.body;
 
@@ -352,7 +223,7 @@ router.put('/:id', authMiddleware, async (req: Request<{ id: string }, {}, TaskU
 });
 
 // Удаление задачи
-router.delete('/:id', authMiddleware, async (req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> => {
+router.delete('/:id', authMiddleware, roleMiddleware('Администратор'), async (req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> => {
   const taskId = parseInt(req.params.id);
 
   if (isNaN(taskId)) {
@@ -387,7 +258,7 @@ router.delete('/:id', authMiddleware, async (req: Request<{ id: string }>, res: 
 });
 
 // Получение списка пользователей для назначения задач
-router.get('/users', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.get('/users', authMiddleware, roleMiddleware('Администратор'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const pool = await poolPromise;
     const result = await pool.request().query('SELECT UserID, FullName FROM Users');
@@ -397,6 +268,51 @@ router.get('/users', authMiddleware, async (req: Request, res: Response, next: N
   } catch (error) {
     console.error('Ошибка получения списка пользователей:', error);
     res.status(500).json({ message: 'Ошибка сервера при получении списка пользователей' });
+    next(error);
+  }
+});
+
+// Получение списка заказов для создания задач
+router.get('/orders', authMiddleware, roleMiddleware('Администратор'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const pool = await poolPromise;
+    const result = await pool.request().query('SELECT OrderID, Title FROM Orders');
+
+    const orders = result.recordset;
+    res.json(orders);
+  } catch (error) {
+    console.error('Ошибка получения списка заказов:', error);
+    res.status(500).json({ message: 'Ошибка сервера при получении списка заказов' });
+    next(error);
+  }
+});
+
+// Получение списка этапов для создания задач
+router.get('/stages', authMiddleware, roleMiddleware('Администратор'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const pool = await poolPromise;
+    const result = await pool.request().query('SELECT StageID, Name FROM Stage');
+
+    const stages = result.recordset;
+    res.json(stages);
+  } catch (error) {
+    console.error('Ошибка получения списка этапов:', error);
+    res.status(500).json({ message: 'Ошибка сервера при получении списка этапов' });
+    next(error);
+  }
+});
+
+// Получение списка статусов для создания задач
+router.get('/statuses', authMiddleware, roleMiddleware('Администратор'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const pool = await poolPromise;
+    const result = await pool.request().query('SELECT StatusID, Name FROM Status');
+
+    const statuses = result.recordset;
+    res.json(statuses);
+  } catch (error) {
+    console.error('Ошибка получения списка статусов:', error);
+    res.status(500).json({ message: 'Ошибка сервера при получении списка статусов' });
     next(error);
   }
 });

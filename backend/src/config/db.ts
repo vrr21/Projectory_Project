@@ -1,8 +1,16 @@
-// backend/src/config/db.ts
 import sql from 'mssql';
 import dotenv from 'dotenv';
 
+// Загружаем переменные окружения
 dotenv.config();
+
+// Проверяем, что все необходимые переменные окружения заданы
+const requiredEnvVars = ['DB_USER', 'DB_PASSWORD', 'DB_HOST', 'DB_PORT', 'DB_NAME'];
+const missingEnvVars = requiredEnvVars.filter((envVar) => !process.env[envVar]);
+if (missingEnvVars.length > 0) {
+  console.error('Missing required environment variables:', missingEnvVars.join(', '));
+  process.exit(1);
+}
 
 const dbConfig: sql.config = {
   user: process.env.DB_USER || 'ProssLibrann',
@@ -11,10 +19,18 @@ const dbConfig: sql.config = {
   port: parseInt(process.env.DB_PORT || '1433', 10),
   database: process.env.DB_NAME || 'DB_PROJECTORY',
   options: {
-    encrypt: false,
-    trustServerCertificate: true,
+    encrypt: false, // Для локального SQL Server обычно не требуется шифрование
+    trustServerCertificate: true, // Для локального сервера
   },
 };
+
+// Логируем конфигурацию для отладки
+console.log('Database configuration:', {
+  user: dbConfig.user,
+  server: dbConfig.server,
+  port: dbConfig.port,
+  database: dbConfig.database,
+});
 
 const poolPromise = new sql.ConnectionPool(dbConfig)
   .connect()
@@ -23,7 +39,8 @@ const poolPromise = new sql.ConnectionPool(dbConfig)
     return pool;
   })
   .catch(err => {
-    console.error('Database connection failed:', err);
+    console.error('Database connection failed:', err.message);
+    console.error('Error details:', err);
     throw err;
   });
 

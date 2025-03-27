@@ -1,49 +1,42 @@
-// backend/src/controllers/reportController.ts
 import { Request, Response, NextFunction } from 'express';
 import poolPromise from '../config/db';
-
-// Расширяем тип Request, чтобы добавить свойство user
-declare global {
-  namespace Express {
-    interface Request {
-      user?: { userId: number; role: string };
-    }
-  }
-}
 
 export const getAdminStats = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const pool = await poolPromise;
-    console.log('Запрос статистики для администратора:', req.user);
 
-    // Получаем статистику для администратора
     const stats = await pool.request().query(`
       SELECT 
-        (SELECT COUNT(*) FROM Users WHERE IsAdmin = 1) AS adminCount,
-        (SELECT COUNT(*) FROM Users WHERE IsAdmin = 0) AS employeeCount,
-        (SELECT COUNT(*) FROM Orders) AS orderCount,
-        (SELECT COUNT(*) FROM TaskExecution) AS taskCount,
-        (SELECT COUNT(*) FROM TaskExecution WHERE StatusID = (SELECT StatusID FROM Status WHERE Name = 'Завершено')) AS completedTasks
+        (SELECT COUNT(*) FROM TaskExecution) AS TotalTasks,
+        (SELECT COUNT(*) FROM Users WHERE Role = 'Сотрудник') AS TotalEmployees,
+        (SELECT COUNT(*) FROM Orders) AS TotalOrders,
+        (SELECT COUNT(*) FROM TaskExecution WHERE Deadline < GETDATE() AND StatusID != (SELECT StatusID FROM Status WHERE Name = 'Завершено')) AS OverdueTasks
     `);
 
-    console.log('Статистика успешно получена:', stats.recordset[0]);
     res.json(stats.recordset[0]);
   } catch (error) {
-    console.error('Ошибка загрузки статистики:', error);
-    res.status(500).json({ message: 'Ошибка сервера при загрузке статистики' });
+    console.error('Ошибка получения статистики:', error);
+    res.status(500).json({ message: 'Ошибка сервера при получении статистики' });
     next(error);
   }
 };
 
-// Другие методы контроллера
 export const getUserTaskReport = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const pool = await poolPromise;
-    const result = await pool.request().query('SELECT * FROM UserTaskReport');
+    const result = await pool.request().query(`
+      SELECT 
+        UserID,
+        FullName,
+        CompletedTasks,
+        TotalHours
+      FROM UserTaskReport
+    `);
+
     res.json(result.recordset);
   } catch (error) {
-    console.error('Ошибка получения отчёта:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    console.error('Ошибка получения отчёта по задачам:', error);
+    res.status(500).json({ message: 'Ошибка сервера при получении отчёта по задачам' });
     next(error);
   }
 };
@@ -51,11 +44,21 @@ export const getUserTaskReport = async (req: Request, res: Response, next: NextF
 export const getUserTaskByPeriod = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const pool = await poolPromise;
-    const result = await pool.request().query('SELECT * FROM UserTaskByPeriod');
+    const result = await pool.request().query(`
+      SELECT 
+        UserID,
+        FullName,
+        ExecutionDate,
+        Stage,
+        TaskDescription,
+        HoursSpent
+      FROM UserTaskByPeriod
+    `);
+
     res.json(result.recordset);
   } catch (error) {
     console.error('Ошибка получения отчёта по периоду:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: 'Ошибка сервера при получении отчёта по периоду' });
     next(error);
   }
 };
