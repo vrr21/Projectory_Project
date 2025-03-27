@@ -1,20 +1,18 @@
-// backend/src/routes/tasks.ts
 import { Router, Request, Response, NextFunction } from 'express';
 import poolPromise from '../config/db';
 import { authMiddleware } from '../middleware/authMiddleware';
 
 // Определяем интерфейсы для типизации данных
 interface Task {
-  TaskID: number;
-  Title: string;
-  Description: string;
+  TaskExecutionID: number;
+  TaskDescription: string;
+  UserName: string;
+  Stage: string;
+  ExecutionDate: string | null; // Изменено на string | null
+  Deadline: string | null;      // Изменено на string | null
+  HoursSpent: number;
   Status: string;
-  Priority: string;
-  CreatedBy: number;
-  AssignedTo: number;
-  CreatedAt: Date;
-  UpdatedAt: Date;
-  FullName?: string; // Для имени пользователя (при джойне)
+  OrderTitle: string;
 }
 
 interface User {
@@ -22,16 +20,51 @@ interface User {
   FullName: string;
 }
 
+interface Status {
+  StatusID: number;
+  Name: string;
+}
+
+interface Order {
+  OrderID: number;
+  Title: string;
+}
+
+interface Stage {
+  StageID: number;
+  Name: string;
+}
+
+// Интерфейс для тела запроса на создание/обновление задачи
+interface TaskUpdateRequest {
+  orderId: number;
+  userId: number;
+  stageId: number;
+  executionDate: string | null;
+  deadline: string | null;
+  hoursSpent: number;
+  statusId: number;
+  description: string;
+}
+
 const router = Router();
 
-// Получение всех задач
+// Получение всех задач (для администратора)
 router.get('/', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const pool = await poolPromise;
     const result = await pool.request().query(`
-      SELECT t.*, u.FullName 
-      FROM Tasks t
-      LEFT JOIN Users u ON t.AssignedTo = u.UserID
+      SELECT 
+        TaskExecutionID,
+        TaskDescription,
+        UserName,
+        Stage,
+        ExecutionDate,
+        Deadline,
+        HoursSpent,
+        Status,
+        OrderTitle
+      FROM TaskList
     `);
 
     const tasks: Task[] = result.recordset;
@@ -39,6 +72,48 @@ router.get('/', authMiddleware, async (req: Request, res: Response, next: NextFu
   } catch (error) {
     console.error('Ошибка получения задач:', error);
     res.status(500).json({ message: 'Ошибка сервера при получении задач' });
+    next(error);
+  }
+});
+
+// Получение задач для конкретного пользователя
+router.get('/user-tasks', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const userId = req.query.userId as string;
+
+  if (!userId) {
+    res.status(400).json({ message: 'Не указан userId' });
+    return;
+  }
+
+  try {
+    const pool = await poolPromise;
+    const result = await pool
+      .request()
+      .input('userId', parseInt(userId))
+      .query(`
+        SELECT 
+          TaskExecutionID,
+          TaskDescription,
+          UserName,
+          Stage,
+          ExecutionDate,
+          Deadline,
+          HoursSpent,
+          Status,
+          OrderTitle
+        FROM TaskList
+        WHERE UserName = (
+          SELECT FullName 
+          FROM Users 
+          WHERE UserID = @userId
+        )
+      `);
+
+    const tasks: Task[] = result.recordset;
+    res.json(tasks);
+  } catch (error) {
+    console.error('Ошибка получения задач пользователя:', error);
+    res.status(500).json({ message: 'Ошибка сервера при получении задач пользователя' });
     next(error);
   }
 });
@@ -58,10 +133,18 @@ router.get('/:id', authMiddleware, async (req: Request<{ id: string }>, res: Res
       .request()
       .input('taskId', taskId)
       .query(`
-        SELECT t.*, u.FullName 
-        FROM Tasks t
-        LEFT JOIN Users u ON t.AssignedTo = u.UserID
-        WHERE t.TaskID = @taskId
+        SELECT 
+          TaskExecutionID,
+          TaskDescription,
+          UserName,
+          Stage,
+          ExecutionDate,
+          Deadline,
+          HoursSpent,
+          Status,
+          OrderTitle
+        FROM TaskList
+        WHERE TaskExecutionID = @taskId
       `);
 
     const task: Task | undefined = result.recordset[0];
@@ -78,13 +161,114 @@ router.get('/:id', authMiddleware, async (req: Request<{ id: string }>, res: Res
   }
 });
 
-// Создание новой задачи
-router.post('/', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const { title, description, status, priority, assignedTo } = req.body;
-  const createdBy = req.user?.userId;
+// Получение StatusID по имени статуса
+router.get('/status', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const statusName = req.query.name as string;
 
-  if (!title || !description || !status || !priority || !createdBy) {
-    res.status(400).json({ message: 'Все поля обязательны' });
+  if (!statusName) {
+    res.status(400).json({ message: 'Не указано имя статуса' });
+    return;
+  }
+
+  try {
+    const pool = await poolPromise;
+    const result = await pool
+      .request()
+      .input('statusName', statusName)
+      .query(`
+        SELECT StatusID
+        FROM Status
+        WHERE Name = @statusName
+      `);
+
+    const status: Status | undefined = result.recordset[0];
+    if (!status) {
+      res.status(404).json({ message: 'Статус не найден' });
+      return;
+    }
+
+    res.json({ statusId: status.StatusID });
+  } catch (error) {
+    console.error('Ошибка получения статуса:', error);
+    res.status(500).json({ message: 'Ошибка сервера при получении статуса' });
+    next(error);
+  }
+});
+
+// Получение OrderID по названию заказа
+router.get('/orders/by-title', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const orderTitle = req.query.title as string;
+
+  if (!orderTitle) {
+    res.status(400).json({ message: 'Не указано название заказа' });
+    return;
+  }
+
+  try {
+    const pool = await poolPromise;
+    const result = await pool
+      .request()
+      .input('orderTitle', orderTitle)
+      .query(`
+        SELECT OrderID
+        FROM Orders
+        WHERE Title = @orderTitle
+      `);
+
+    const order: Order | undefined = result.recordset[0];
+    if (!order) {
+      res.status(404).json({ message: 'Заказ не найден' });
+      return;
+    }
+
+    res.json({ orderId: order.OrderID });
+  } catch (error) {
+    console.error('Ошибка получения OrderID:', error);
+    res.status(500).json({ message: 'Ошибка сервера при получении OrderID' });
+    next(error);
+  }
+});
+
+// Получение StageID по имени этапа
+router.get('/stage', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const stageName = req.query.name as string;
+
+  if (!stageName) {
+    res.status(400).json({ message: 'Не указано название этапа' });
+    return;
+  }
+
+  try {
+    const pool = await poolPromise;
+    const result = await pool
+      .request()
+      .input('stageName', stageName)
+      .query(`
+        SELECT StageID
+        FROM Stage
+        WHERE Name = @stageName
+      `);
+
+    const stage: Stage | undefined = result.recordset[0];
+    if (!stage) {
+      res.status(404).json({ message: 'Этап не найден' });
+      return;
+    }
+
+    res.json({ stageId: stage.StageID });
+  } catch (error) {
+    console.error('Ошибка получения StageID:', error);
+    res.status(500).json({ message: 'Ошибка сервера при получении StageID' });
+    next(error);
+  }
+});
+
+// Создание новой задачи
+router.post('/', authMiddleware, async (req: Request<{}, {}, TaskUpdateRequest>, res: Response, next: NextFunction): Promise<void> => {
+  const { orderId, userId, stageId, executionDate, deadline, hoursSpent, statusId, description } = req.body;
+
+  if (!orderId || !userId || !stageId || !statusId || !description) {
+    res.status(400).json({ message: 'Все обязательные поля должны быть заполнены' });
     return;
   }
 
@@ -92,15 +276,17 @@ router.post('/', authMiddleware, async (req: Request, res: Response, next: NextF
     const pool = await poolPromise;
     await pool
       .request()
-      .input('title', title)
+      .input('orderId', orderId)
+      .input('userId', userId)
+      .input('stageId', stageId)
+      .input('executionDate', executionDate || null)
+      .input('deadline', deadline || null)
+      .input('hoursSpent', hoursSpent || 0)
+      .input('statusId', statusId)
       .input('description', description)
-      .input('status', status)
-      .input('priority', priority)
-      .input('createdBy', createdBy)
-      .input('assignedTo', assignedTo || null)
       .query(`
-        INSERT INTO Tasks (Title, Description, Status, Priority, CreatedBy, AssignedTo, CreatedAt, UpdatedAt)
-        VALUES (@title, @description, @status, @priority, @createdBy, @assignedTo, GETDATE(), GETDATE())
+        INSERT INTO TaskExecution (OrderID, UserID, StageID, ExecutionDate, Deadline, HoursSpent, StatusID, Description)
+        VALUES (@orderId, @userId, @stageId, @executionDate, @deadline, @hoursSpent, @statusId, @description)
       `);
 
     res.status(201).json({ message: 'Задача успешно создана' });
@@ -112,17 +298,17 @@ router.post('/', authMiddleware, async (req: Request, res: Response, next: NextF
 });
 
 // Обновление задачи
-router.put('/:id', authMiddleware, async (req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> => {
+router.put('/:id', authMiddleware, async (req: Request<{ id: string }, {}, TaskUpdateRequest>, res: Response, next: NextFunction): Promise<void> => {
   const taskId = parseInt(req.params.id);
-  const { title, description, status, priority, assignedTo } = req.body;
+  const { orderId, userId, stageId, executionDate, deadline, hoursSpent, statusId, description } = req.body;
 
   if (isNaN(taskId)) {
     res.status(400).json({ message: 'Неверный ID задачи' });
     return;
   }
 
-  if (!title || !description || !status || !priority) {
-    res.status(400).json({ message: 'Все поля обязательны' });
+  if (!orderId || !userId || !stageId || !statusId || !description) {
+    res.status(400).json({ message: 'Все обязательные поля должны быть заполнены' });
     return;
   }
 
@@ -131,9 +317,9 @@ router.put('/:id', authMiddleware, async (req: Request<{ id: string }>, res: Res
     const result = await pool
       .request()
       .input('taskId', taskId)
-      .query('SELECT * FROM Tasks WHERE TaskID = @taskId');
+      .query('SELECT * FROM TaskExecution WHERE TaskExecutionID = @taskId');
 
-    const task: Task | undefined = result.recordset[0];
+    const task = result.recordset[0];
     if (!task) {
       res.status(404).json({ message: 'Задача не найдена' });
       return;
@@ -142,15 +328,19 @@ router.put('/:id', authMiddleware, async (req: Request<{ id: string }>, res: Res
     await pool
       .request()
       .input('taskId', taskId)
-      .input('title', title)
+      .input('orderId', orderId)
+      .input('userId', userId)
+      .input('stageId', stageId)
+      .input('executionDate', executionDate || null)
+      .input('deadline', deadline || null)
+      .input('hoursSpent', hoursSpent || 0)
+      .input('statusId', statusId)
       .input('description', description)
-      .input('status', status)
-      .input('priority', priority)
-      .input('assignedTo', assignedTo || null)
       .query(`
-        UPDATE Tasks
-        SET Title = @title, Description = @description, Status = @status, Priority = @priority, AssignedTo = @assignedTo, UpdatedAt = GETDATE()
-        WHERE TaskID = @taskId
+        UPDATE TaskExecution
+        SET OrderID = @orderId, UserID = @userId, StageID = @stageId, ExecutionDate = @executionDate, 
+            Deadline = @deadline, HoursSpent = @hoursSpent, StatusID = @statusId, Description = @description
+        WHERE TaskExecutionID = @taskId
       `);
 
     res.json({ message: 'Задача успешно обновлена' });
@@ -175,9 +365,9 @@ router.delete('/:id', authMiddleware, async (req: Request<{ id: string }>, res: 
     const result = await pool
       .request()
       .input('taskId', taskId)
-      .query('SELECT * FROM Tasks WHERE TaskID = @taskId');
+      .query('SELECT * FROM TaskExecution WHERE TaskExecutionID = @taskId');
 
-    const task: Task | undefined = result.recordset[0];
+    const task = result.recordset[0];
     if (!task) {
       res.status(404).json({ message: 'Задача не найдена' });
       return;
@@ -186,7 +376,7 @@ router.delete('/:id', authMiddleware, async (req: Request<{ id: string }>, res: 
     await pool
       .request()
       .input('taskId', taskId)
-      .query('DELETE FROM Tasks WHERE TaskID = @taskId');
+      .query('DELETE FROM TaskExecution WHERE TaskExecutionID = @taskId');
 
     res.json({ message: 'Задача успешно удалена' });
   } catch (error) {
